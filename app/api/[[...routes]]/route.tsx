@@ -1,30 +1,36 @@
 /** @jsxImportSource frog/jsx */
 
-import { Button, Frog, TextInput } from 'frog'
-import { devtools } from 'frog/dev'
+import { Button, Frog, TextInput } from "frog";
+import { devtools } from "frog/dev";
 // import { neynar } from 'frog/hubs'
-import { handle } from 'frog/next'
-import { serveStatic } from 'frog/serve-static'
+import { handle } from "frog/next";
+import { serveStatic } from "frog/serve-static";
 
 const app = new Frog({
-  assetsPath: '/',
-  basePath: '/api',
+  assetsPath: "/",
+  basePath: "/api",
   // Supply a Hub to enable frame verification.
   // hub: neynar({ apiKey: 'NEYNAR_FROG_FM' })
-  title: 'Frog Frame',
-})
+  title: "Frog Frame",
+});
+
+const userDetails = new Map();
 
 // Uncomment to use Edge Runtime
 // export const runtime = 'edge'
 
 const base_url = "http://localhost:8000";
 
-//to acess frame - ?theatre=PVR Cinemas&movieTitle=Inception&showTime=19:00.
-app.frame("/", async (c) => {
+//to acess frame - ?movieTitle=Avengers:%20Endgame&theatreName=PVR%20Cinemas&showTime=19:00
+app.frame("/movie", async (c) => {
   const urlParams = new URLSearchParams(c.req.url.split("?")[1]);
-  const theatre = urlParams.get("theatre") || "INOX";
+  const theatre = urlParams.get("theatreName") || "INOX";
   const movieTitle = urlParams.get("movieTitle") || "Inception";
   const showTime = urlParams.get("showTime") || "19:00";
+
+  userDetails.set("theatre", theatre);
+  userDetails.set("movie", movieTitle);
+  userDetails.set("showTime", showTime);
 
   const { buttonValue, inputText, status } = c;
 
@@ -42,8 +48,10 @@ app.frame("/", async (c) => {
     ? inputText.split(",").map((s) => s.trim())
     : [];
 
+  userDetails.set("selectedSeats", selectedSeats);
+
   return c.res({
-    action: "/summary",
+    action: "/movie/summary",
     image: (
       <div
         style={{
@@ -222,7 +230,7 @@ app.frame("/", async (c) => {
     ),
     intents: [
       <TextInput key="input" placeholder="Enter seats (e.g., A1,A2)" />,
-      <Button key="confirm" value="confirm" action="/">
+      <Button key="confirm" value="confirm" action="/movie">
         Confirm
       </Button>,
       <Button key="book">Book</Button>,
@@ -232,11 +240,16 @@ app.frame("/", async (c) => {
   });
 });
 
-app.frame("/summary", async (c) => {
-  const theatre = "INOX";
-  const movieTitle = "Inception";
-  const showTime = "19:00";
-  const selectedSeats = ["A1", "A5"];
+app.frame("/movie/summary", async (c) => {
+  // const theatre = "INOX";
+  // const movieTitle = "Inception";
+  // const showTime = "19:00";
+  // const selectedSeats = ["A1", "A5"];
+
+  const theatre = userDetails.get("theatre");
+  const movieTitle = userDetails.get("movie");
+  const showTime = userDetails.get("showTime");
+  const selectedSeats = userDetails.get("selectedSeats");
 
   const ticketPrice = 200;
   const totalAmount = ticketPrice * selectedSeats.length;
@@ -383,11 +396,10 @@ app.frame("/summary", async (c) => {
   });
 });
 
+devtools(app, { serveStatic });
 
-devtools(app, { serveStatic })
-
-export const GET = handle(app)
-export const POST = handle(app)
+export const GET = handle(app);
+export const POST = handle(app);
 
 // NOTE: That if you are using the devtools and enable Edge Runtime, you will need to copy the devtools
 // static assets to the public folder. You can do this by adding a script to your package.json:
