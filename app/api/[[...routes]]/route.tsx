@@ -22,7 +22,7 @@ const userDetails = new Map();
 // Uncomment to use Edge Runtime
 // export const runtime = 'edge'
 
-const base_url = "http://localhost:8000";
+const base_url = "http://ethglobal-bangkok-production.up.railway.app";
 
 //to acess frame - ?movieTitle=Avengers:%20Endgame&theatreName=PVR%20Cinemas&showTime=19:00
 app.frame("/movie", async (c) => {
