@@ -5,6 +5,9 @@ import { devtools } from "frog/dev";
 // import { neynar } from 'frog/hubs'
 import { handle } from "frog/next";
 import { serveStatic } from "frog/serve-static";
+import { createTicketAttestation } from "./attestation";
+import QRCode from "qrcode";
+// import { User } from "./index";
 
 const app = new Frog({
   assetsPath: "/",
@@ -24,13 +27,35 @@ const base_url = "http://localhost:8000";
 //to acess frame - ?movieTitle=Avengers:%20Endgame&theatreName=PVR%20Cinemas&showTime=19:00
 app.frame("/movie", async (c) => {
   const urlParams = new URLSearchParams(c.req.url.split("?")[1]);
-  const theatre = urlParams.get("theatreName") || "INOX";
-  const movieTitle = urlParams.get("movieTitle") || "Inception";
+  console.log("URL params: ", urlParams);
+  const theatre = urlParams.get("theatreName") || "PVR Cinemas";
+  const movieTitle = urlParams.get("movieTitle") || "Avengers: Endgame";
   const showTime = urlParams.get("showTime") || "19:00";
 
   userDetails.set("theatre", theatre);
   userDetails.set("movie", movieTitle);
   userDetails.set("showTime", showTime);
+
+  // const existingUser = await User.findOne({ "user1" });
+  // if (!existingUser) {
+  //   const newUser = new User({
+  //     "user1",
+  //     theatre: '',
+  //     movie: '',
+  //     showTime: '',
+  //     selectedSeats: [],
+  //     attestationId: '',
+  //     txHash: '',
+  //     indexingValue: ''
+  //   });
+  //   await newUser.save();
+  // }
+
+  // // update user theatre, movie and showtime
+  // await User.updateOne(
+  //   { "user1 "},
+
+  // );
 
   const { buttonValue, inputText, status } = c;
 
@@ -230,7 +255,9 @@ app.frame("/movie", async (c) => {
     ),
     intents: [
       <TextInput key="input" placeholder="Enter seats (e.g., A1,A2)" />,
-      <Button key="confirm" value="confirm" action="/movie">
+      <Button
+        action={`/movie?movieTitle=${movieTitle}&theatreName=${theatre}&showTime=${showTime}`}
+      >
         Confirm
       </Button>,
       <Button key="book">Book</Button>,
@@ -256,7 +283,24 @@ app.frame("/movie/summary", async (c) => {
   const convenienceFee = Math.round(totalAmount * 0.0175);
   const finalAmount = totalAmount + convenienceFee;
 
+  const res = await createTicketAttestation(
+    theatre,
+    movieTitle,
+    showTime,
+    selectedSeats,
+    finalAmount
+  );
+
+  userDetails.set("attestationId", res.attestationId);
+  userDetails.set("txHash", res.txHash);
+  userDetails.set("indexingValue", res.indexingValue);
+
+  console.log("attestationId", res.attestationId);
+  console.log("txHash", res.txHash);
+  console.log("indexingValue", res.indexingValue);
+
   return c.res({
+    action: "/movie/username",
     image: (
       <div
         style={{
@@ -391,8 +435,228 @@ app.frame("/movie/summary", async (c) => {
     ),
     intents: [
       // <Button.Transaction >Pay ₹{finalAmount.toString()}</Button.Transaction>,
-      <Button>Pay ₹{finalAmount.toString()}</Button>,
+      // <Button>Pay ₹{finalAmount.toString()}</Button>,
+      <Button key="pay">Pay ₹{finalAmount.toString()}</Button>,
     ],
+  });
+});
+
+app.frame("/movie/username", async (c) => {
+  const { buttonValue, inputText, status } = c;
+
+  userDetails.set("name", inputText);
+
+  return c.res({
+    action: "/movie/phone",
+    image: (
+      <div
+        style={{
+          alignItems: "center",
+          background: "black",
+          backgroundSize: "100% 100%",
+          display: "flex",
+          flexDirection: "column",
+          flexWrap: "nowrap",
+          height: "100%",
+          justifyContent: "center",
+          textAlign: "center",
+          width: "100%",
+        }}
+      >
+        <div
+          style={{
+            color: "white",
+            fontSize: 60,
+            fontStyle: "normal",
+            letterSpacing: "-0.025em",
+            lineHeight: 1.4,
+            marginTop: 30,
+            padding: "0 120px",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          We Need Your Name, Please!!
+        </div>
+      </div>
+    ),
+    intents: [
+      <TextInput key="input" placeholder="Enter Name (e.g., Andy)" />,
+      <Button value="submit" action="/movie/phone">
+        Submit
+      </Button>,
+      status === "response" && <Button.Reset>Reset</Button.Reset>,
+    ],
+  });
+});
+
+app.frame("/movie/phone", async (c) => {
+  const { buttonValue, inputText, status } = c;
+
+  userDetails.set("phone", inputText);
+
+  return c.res({
+    action: "/movie/ticket",
+    image: (
+      <div
+        style={{
+          alignItems: "center",
+          background: "black",
+          backgroundSize: "100% 100%",
+          display: "flex",
+          flexDirection: "column",
+          flexWrap: "nowrap",
+          height: "100%",
+          justifyContent: "center",
+          textAlign: "center",
+          width: "100%",
+        }}
+      >
+        <div
+          style={{
+            color: "white",
+            fontSize: 60,
+            fontStyle: "normal",
+            letterSpacing: "-0.025em",
+            lineHeight: 1.4,
+            marginTop: 30,
+            padding: "0 120px",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          We Need Your Phone Number, Please!!
+        </div>
+      </div>
+    ),
+    intents: [
+      <TextInput key="input" placeholder="Enter your phone (e.g., 12345)" />,
+      <Button value="submit" action="/movie/ticket">
+        Submit
+      </Button>,
+      status === "response" && <Button.Reset>Reset Phone</Button.Reset>,
+    ],
+  });
+});
+
+app.frame("/movie/ticket", async (c) => {
+  const long_url = `https://testnet-scan.sign.global/attestation/onchain_evm_534351_${userDetails.get(
+    "attestationId"
+  )}`;
+
+  console.log("Long url: ", long_url);
+
+  const response = await fetch(
+    `https://s.squizee.in/short/formResponse?url=${long_url}&email=&format=json&suffix=`
+  );
+  const result = await response.json();
+  const short_url = result.shortened_url;
+  // Generate QR code as a data URL (base64 image)
+  const qrCodeDataURL = await QRCode.toDataURL(short_url, {
+    width: 256,
+    margin: 4,
+  });
+  console.log(qrCodeDataURL);
+  return c.res({
+    image: (
+      <div
+        style={{
+          alignItems: "center",
+          background: "white",
+          color: "#e0e0e0",
+          display: "flex",
+          flexWrap: "wrap",
+          flexDirection: "column",
+          height: "100%",
+          width: "100%",
+          padding: "16px",
+          fontFamily: "Inter, system-ui, sans-serif",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            background: "white",
+            borderRadius: "16px",
+            padding: "20px",
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            marginBottom: "16px",
+            boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <div
+            style={{
+              color: "black",
+              fontSize: "40px",
+              fontWeight: "700",
+              marginBottom: "6px",
+            }}
+          >
+            {userDetails.get("movie")}
+          </div>
+          <div
+            style={{
+              color: "black",
+              fontSize: "30px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <span>🕒 {userDetails.get("showTime")}</span>
+            <span>•</span>
+            <span>{userDetails.get("selectedSeats").join(", ")}</span>
+          </div>
+        </div>
+
+        {/* QR Code */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            marginTop: "20px",
+            padding: "12px",
+            background: "#2d2d2d",
+            borderRadius: "12px",
+            boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <img
+            src={qrCodeDataURL}
+            alt="QR Code"
+            style={{
+              border: "1px solid #444",
+              borderRadius: "10px",
+              height: "200px",
+              width: "200px",
+            }}
+          />
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "12px",
+            padding: "16px",
+            background: "#2d2d2d",
+            borderRadius: "16px",
+            width: "90%",
+            marginTop: "20px",
+            justifyContent: "center",
+            boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <div
+            style={{ color: "#22c55e", fontWeight: "800", fontSize: "20px" }}
+          >
+            ✓ Ticket Confirmed for Manvith
+          </div>
+        </div>
+      </div>
+    ),
   });
 });
 
